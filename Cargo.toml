@@ -1,0 +1,13 @@
+[package]
+name = "vkwh"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+#vulkano = "0.31"
+#vulkano-win = "0.31"
+vulkano = {git = "https://github.com/vulkano-rs/vulkano" }
+vulkano-win = {git = "https://github.com/vulkano-rs/vulkano" }
+vulkano-shaders = {git = "https://github.com/vulkano-rs/vulkano" }
+bytemuck = "1"
+winit = "0.27"
