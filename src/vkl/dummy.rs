@@ -135,7 +135,7 @@ impl Vkl for Dummy {
 		builder.end_render_pass().unwrap();
 	}
 
-	fn update_framebuffers(&mut self, images: &vkw::Images) {
+	fn update_images(&mut self, images: &vkw::Images) {
 		self.framebuffers =
 			vku::window_size_dependent_setup(self.render_pass.clone(), images);
 	}

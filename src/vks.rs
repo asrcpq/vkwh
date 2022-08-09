@@ -82,13 +82,15 @@ impl Vks {
 			let surface_caps = physical_device
 				.surface_capabilities(&surface, Default::default())
 				.unwrap();
-			let image_format = Some(
-				physical_device
-					.surface_formats(&surface, Default::default())
-					.unwrap()[0]
-					.0,
-			);
-			eprintln!("image format: {:?}", image_format);
+			let formats = physical_device
+				.surface_formats(&surface, Default::default())
+				.unwrap();
+			eprintln!("available formats:");
+			for format in formats.iter() {
+				eprintln!("\t{:?}", format);
+			}
+			let image_format = Some(formats[0].0);
+			eprintln!("selected format: {:?}", image_format);
 			let composite_alpha = surface_caps
 				.supported_composite_alpha
 				.iter()

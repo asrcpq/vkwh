@@ -68,9 +68,10 @@ impl Vkr {
 				};
 
 			self.vks.swapchain = new_swapchain;
+			self.vks.images = new_images.clone();
 			for vkl in self.vkls.iter() {
 				let mut vkl = vkl.lock().unwrap();
-				vkl.update_framebuffers(&new_images);
+				vkl.update_images(&new_images);
 			}
 			self.recreate_swapchain = false;
 		}
