@@ -10,7 +10,7 @@ fn main() {
 	let mut el = EventLoop::new();
 	let base = Base::new_ref(&el);
 	let layer_t = layer::triangles::Triangles::new_ref(base.clone());
-	let mut vkc = Vkc::new(base.clone(), vec![layer_t]);
+	let mut vkc = Vkc::new(base.clone(), vec![layer_t.clone()]);
 	el.run_return(|event, _, control_flow| {
 		match event {
 			Event::WindowEvent {
@@ -18,6 +18,7 @@ fn main() {
 				..
 			} => *control_flow = ControlFlow::Exit,
 			Event::MainEventsCleared => {
+				layer_t.write().unwrap().update();
 				vkc.mark_update(0);
 				vkc.render();
 			}

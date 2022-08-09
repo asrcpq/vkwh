@@ -287,12 +287,9 @@ impl Base {
 			surface_capabilities.min_image_count,
 			surface_capabilities.max_image_count,
 		);
-		let surface_resolution = match surface_capabilities.current_extent.width {
-			std::u32::MAX => vk::Extent2D {
-				width: 800,
-				height: 600, //FIXME
-			},
-			_ => surface_capabilities.current_extent,
+		let surface_resolution = vk::Extent2D {
+			width: 800,
+			height: 600,
 		};
 		let pre_transform = if surface_capabilities
 			.supported_transforms

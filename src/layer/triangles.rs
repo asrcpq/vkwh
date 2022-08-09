@@ -24,15 +24,22 @@ pub struct Triangles {
 	vertex_shader_module: vk::ShaderModule,
 	vertex_input_buffer: vk::Buffer,
 	vertex_input_buffer_memory: vk::DeviceMemory,
+	vertex_input_buffer_memory_req: vk::MemoryRequirements,
 	fragment_shader_module: vk::ShaderModule,
 	framebuffers: Vec<vk::Framebuffer>,
 	renderpass: vk::RenderPass,
 	viewports: Vec<vk::Viewport>,
+	p: f32,
 }
 
 impl Triangles {
 	pub fn new_ref(base: BaseRef) -> Arc<RwLock<Self>> {
 		Arc::new(RwLock::new(Self::new(base)))
+	}
+
+	pub fn update(&mut self) {
+		self.p += 0.001;
+		if self.p > 1.0 { self.p = 0.0 }
 	}
 
 	pub fn new(base: BaseRef) -> Self { unsafe {
@@ -105,9 +112,10 @@ impl Triangles {
 					.unwrap()
 			})
 			.collect();
+		// TODO: handle shader compiling with shaderc_rs, in build.rs
 		let mut vertex_spv_file =
-			Cursor::new(&include_bytes!("/tmp/vert.spv")[..]);
-		let mut frag_spv_file = Cursor::new(&include_bytes!("/tmp/frag.spv")[..]);
+			Cursor::new(&include_bytes!("../shader/triangle_vert.spv")[..]);
+		let mut frag_spv_file = Cursor::new(&include_bytes!("../shader/triangle_frag.spv")[..]);
 
 		let vertex_code =
 			read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
@@ -172,7 +180,7 @@ impl Triangles {
 			..Default::default()
 		};
 		let vertex_input_buffer_info = vk::BufferCreateInfo {
-			size: 3 * mem::size_of::<Vertex>() as u64,
+			size: 100 * mem::size_of::<Vertex>() as u64,
 			usage: vk::BufferUsageFlags::VERTEX_BUFFER,
 			sharing_mode: vk::SharingMode::EXCLUSIVE,
 			..Default::default()
@@ -203,36 +211,6 @@ impl Triangles {
 			.allocate_memory(&vertex_buffer_allocate_info, None)
 			.unwrap();
 
-		let vertices = [
-			Vertex {
-				pos: [-1.0, 1.0, 0.0, 1.0],
-				color: [0.0, 1.0, 0.0, 1.0],
-			},
-			Vertex {
-				pos: [1.0, 1.0, 0.0, 1.0],
-				color: [0.0, 0.0, 1.0, 1.0],
-			},
-			Vertex {
-				pos: [0.0, -1.0, 0.0, 1.0],
-				color: [1.0, 0.0, 0.0, 1.0],
-			},
-		];
-
-		let vert_ptr = device.map_memory(
-			vertex_input_buffer_memory,
-			0,
-			vertex_input_buffer_memory_req.size,
-			vk::MemoryMapFlags::empty(),
-		)
-		.unwrap();
-
-		let mut vert_align = Align::new(
-			vert_ptr,
-			mem::align_of::<Vertex>() as u64,
-			vertex_input_buffer_memory_req.size,
-		);
-		vert_align.copy_from_slice(&vertices);
-		device.unmap_memory(vertex_input_buffer_memory);
 		device
 			.bind_buffer_memory(vertex_input_buffer, vertex_input_buffer_memory, 0)
 			.unwrap();
@@ -317,10 +295,12 @@ impl Triangles {
 			vertex_shader_module,
 			vertex_input_buffer,
 			vertex_input_buffer_memory,
+			vertex_input_buffer_memory_req,
 			fragment_shader_module,
 			framebuffers,
 			renderpass,
 			viewports,
+			p: 0.0,
 		}
 	}}
 }
@@ -365,6 +345,48 @@ impl Layer for Triangles {
 
 		let base = self.base.read().unwrap();
 		let device = &base.device;
+		let vertices = [
+			Vertex {
+				pos: [1.0, 0.0, 0.0, 1.0],
+				color: [self.p, 1.0, 0.0, 1.0],
+			},
+			Vertex {
+				pos: [0.0, 1.0, 0.0, 1.0],
+				color: [0.0, self.p, 1.0, 1.0],
+			},
+			Vertex {
+				pos: [1.0, 1.0, 0.0, 1.0],
+				color: [1.0, 0.0, self.p, 1.0],
+			},
+			Vertex {
+				pos: [0.0, 0.0, 0.0, 1.0],
+				color: [self.p, 1.0, 0.0, 1.0],
+			},
+			Vertex {
+				pos: [0.0, 1.0, 0.0, 1.0],
+				color: [0.0, self.p, 1.0, 1.0],
+			},
+			Vertex {
+				pos: [1.0, 0.0, 0.0, 1.0],
+				color: [1.0, 0.0, self.p, 1.0],
+			},
+		];
+
+		let vert_ptr = device.map_memory(
+			self.vertex_input_buffer_memory,
+			0,
+			self.vertex_input_buffer_memory_req.size,
+			vk::MemoryMapFlags::empty(),
+		)
+		.unwrap();
+
+		let mut vert_align = Align::new(
+			vert_ptr,
+			mem::align_of::<Vertex>() as u64,
+			self.vertex_input_buffer_memory_req.size,
+		);
+		vert_align.copy_from_slice(&vertices);
+		device.unmap_memory(self.vertex_input_buffer_memory);
 		let render_pass_begin_info = vk::RenderPassBeginInfo::default()
 			.render_pass(self.renderpass)
 			.framebuffer(self.framebuffers[image_idx as usize])
@@ -389,7 +411,7 @@ impl Layer for Triangles {
 			&[self.vertex_input_buffer],
 			&[0],
 		);
-		device.cmd_draw(draw_command_buffer, 3, 1, 0, 0);
+		device.cmd_draw(draw_command_buffer, 6, 1, 0, 0);
 		device.cmd_end_render_pass(draw_command_buffer);
 	}}
 }
