@@ -2,15 +2,27 @@ use ash::extensions::{
 	ext::DebugUtils,
 	khr::{Surface, Swapchain},
 };
+use ash::{Device, Instance};
 use ash::{vk, Entry};
-pub use ash::{Device, Instance};
 use std::borrow::Cow;
 use std::default::Default;
 use std::ffi::CStr;
 use std::ops::Drop;
 use std::os::raw::c_char;
+use std::sync::{Arc, RwLock};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
+
+#[macro_export]
+macro_rules! offset_of {
+	($base:path, $field:ident) => {{
+		#[allow(unused_unsafe)]
+		unsafe {
+			let b: $base = mem::zeroed();
+			(&b.$field as *const _ as isize) - (&b as *const _ as isize)
+		}
+	}};
+}
 
 pub fn record_submit_commandbuffer<F: FnOnce(&Device, vk::CommandBuffer)>(
 	device: &Device,
@@ -111,7 +123,8 @@ pub fn find_memorytype_index(
 		.map(|(index, _memory_type)| index as _)
 }
 
-pub struct Vks {
+pub type BaseRef = Arc<RwLock<Base>>;
+pub struct Base {
 	pub entry: Entry,
 	pub instance: Instance,
 	pub device: Device,
@@ -149,7 +162,11 @@ pub struct Vks {
 	pub setup_commands_reuse_fence: vk::Fence,
 }
 
-impl Vks {
+impl Base {
+	pub fn new_ref<T>(el: &EventLoop<T>) -> BaseRef {
+		Arc::new(RwLock::new(Self::new(el)))
+	}
+
 	pub fn new<T>(el: &EventLoop<T>) -> Self { unsafe {
 		let window = WindowBuilder::new()
 			.build(el)
@@ -264,6 +281,12 @@ impl Vks {
 		{
 			desired_image_count = surface_capabilities.max_image_count;
 		}
+		eprintln!(
+			"image count: {} in {}/{}",
+			desired_image_count,
+			surface_capabilities.min_image_count,
+			surface_capabilities.max_image_count,
+		);
 		let surface_resolution = match surface_capabilities.current_extent.width {
 			std::u32::MAX => vk::Extent2D {
 				width: 800,
@@ -322,6 +345,7 @@ impl Vks {
 		let draw_command_buffer = command_buffers[1];
 
 		let present_images = swapchain_loader.get_swapchain_images(swapchain).unwrap();
+		eprintln!("actual {}", present_images.len());
 		let present_image_views: Vec<vk::ImageView> = present_images
 			.iter()
 			.map(|&image| {
@@ -481,7 +505,7 @@ impl Vks {
 	}
 }}
 
-impl Drop for Vks {
+impl Drop for Base {
 	fn drop(&mut self) {
 		unsafe {
 			self.device.device_wait_idle().unwrap();
