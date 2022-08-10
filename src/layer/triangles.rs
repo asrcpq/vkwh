@@ -99,7 +99,6 @@ impl Triangles {
 					.unwrap()
 			})
 			.collect();
-		// TODO: handle shader compiling with shaderc_rs, in build.rs
 		let mut vertex_spv_file =
 			Cursor::new(&include_bytes!("../shader/triangle_vert.spv")[..]);
 		let mut frag_spv_file = Cursor::new(&include_bytes!("../shader/triangle_frag.spv")[..]);

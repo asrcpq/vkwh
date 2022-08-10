@@ -330,7 +330,7 @@ impl Base {
 		let draw_command_buffer = command_buffers[1];
 
 		let present_images = swapchain_loader.get_swapchain_images(swapchain).unwrap();
-		eprintln!("surface image count: {}", present_images.len());
+		eprintln!("Swapchain images count: {}", present_images.len());
 		let present_image_views: Vec<vk::ImageView> = present_images
 			.iter()
 			.map(|&image| {
