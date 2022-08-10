@@ -3,29 +3,52 @@ use ash::vk;
 use crate::layer::LayerRef;
 use crate::base::{BaseRef, record_submit_commandbuffer};
 
+pub struct LayerObject {
+	layer: LayerRef,
+	damage: bool,
+	image: vk::Image,
+}
+
 pub struct LayerCompositor {
 	base: BaseRef,
-	layers: Vec<LayerRef>,
-	update_flag: Vec<bool>,
+	los: Vec<LayerObject>,
 }
 
 impl LayerCompositor {
-	pub fn new(base: BaseRef, layers: Vec<LayerRef>) -> Self {
+	pub fn new(base: BaseRef, layers: Vec<LayerRef>) -> Self { unsafe {
+		let base_clone = base.clone();
+		let base = base.read().unwrap();
+		let create_info = vk::ImageCreateInfo::default()
+			.image_type(vk::ImageType::TYPE_2D)
+			.format(base.surface_format.format)
+			.extent(base.surface_resolution.into())
+			.mip_levels(1)
+			.array_layers(1)
+			.samples(vk::SampleCountFlags::TYPE_1)
+			.tiling(vk::ImageTiling::OPTIMAL)
+			.usage(vk::ImageUsageFlags::COLOR_ATTACHMENT);
 		Self {
-			base,
-			update_flag: vec![false; layers.len()],
-			layers,
+			base: base_clone,
+			los: layers.into_iter()
+				.map(|layer| {
+					LayerObject {
+						layer,
+						damage: false,
+						image: base.device.create_image(&create_info, None).unwrap(),
+					}
+				})
+				.collect(),
 		}
-	}
+	}}
 
 	pub fn update_all(&mut self) {
-		for flag in self.update_flag.iter_mut() {
-			*flag = true;
+		for lo in self.los.iter_mut() {
+			lo.damage = true;
 		}
 	}
 
 	pub fn mark_update(&mut self, idx: usize) {
-		self.update_flag[idx] = true;
+		self.los[idx].damage = true;
 	}
 
 	pub fn render(&mut self) {
@@ -49,11 +72,11 @@ impl LayerCompositor {
 				&[base.present_complete_semaphore],
 				&[base.rendering_complete_semaphore],
 				|_device, draw_command_buffer| {
-					for (idx, layer) in self.layers.iter().enumerate() {
-						if self.update_flag[idx] {
-							let layer = layer.read().unwrap();
+					for lo in self.los.iter_mut() {
+						if lo.damage {
+							let layer = lo.layer.read().unwrap();
 							layer.render(draw_command_buffer, present_index);
-							self.update_flag[idx] = false;
+							lo.damage = false;
 						}
 					}
 				},
