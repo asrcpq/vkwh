@@ -12,12 +12,13 @@ use crate::layer::Layer;
 use crate::offset_of;
 
 #[derive(Clone, Debug, Copy)]
-struct Vertex {
-	pos: [f32; 4],
-	color: [f32; 4],
+pub struct Vertex {
+	pub pos: [f32; 4],
+	pub color: [f32; 4],
 }
 
 pub struct Triangles {
+	pub vertices: Vec<Vertex>,
 	base: BaseRef,
 	graphics_pipelines: Vec<vk::Pipeline>,
 	pipeline_layout: vk::PipelineLayout,
@@ -29,17 +30,11 @@ pub struct Triangles {
 	framebuffers: Vec<vk::Framebuffer>,
 	renderpass: vk::RenderPass,
 	viewports: Vec<vk::Viewport>,
-	p: f32,
 }
 
 impl Triangles {
 	pub fn new_ref(base: BaseRef) -> Arc<RwLock<Self>> {
 		Arc::new(RwLock::new(Self::new(base)))
-	}
-
-	pub fn update(&mut self) {
-		self.p += 0.001;
-		if self.p > 1.0 { self.p = 0.0 }
 	}
 
 	pub fn new(base: BaseRef) -> Self { unsafe {
@@ -275,6 +270,7 @@ impl Triangles {
 			.expect("Unable to create graphics pipeline");
 
 		Self {
+			vertices: Vec::new(),
 			base: base_clone,
 			graphics_pipelines,
 			pipeline_layout,
@@ -286,7 +282,6 @@ impl Triangles {
 			framebuffers,
 			renderpass,
 			viewports,
-			p: 0.0,
 		}
 	}}
 }
@@ -331,32 +326,6 @@ impl Layer for Triangles {
 
 		let base = self.base.read().unwrap();
 		let device = &base.device;
-		let vertices = [
-			Vertex {
-				pos: [1.0, 0.0, 0.0, 1.0],
-				color: [self.p, 1.0, 0.0, 1.0],
-			},
-			Vertex {
-				pos: [0.0, 1.0, 0.0, 1.0],
-				color: [0.0, self.p, 1.0, 1.0],
-			},
-			Vertex {
-				pos: [1.0, 1.0, 0.0, 1.0],
-				color: [1.0, 0.0, self.p, 1.0],
-			},
-			Vertex {
-				pos: [0.0, 0.0, 0.0, 1.0],
-				color: [self.p, 1.0, 0.0, 1.0],
-			},
-			Vertex {
-				pos: [0.0, 1.0, 0.0, 1.0],
-				color: [0.0, self.p, 1.0, 1.0],
-			},
-			Vertex {
-				pos: [1.0, 0.0, 0.0, 1.0],
-				color: [1.0, 0.0, self.p, 1.0],
-			},
-		];
 
 		let vert_ptr = device.map_memory(
 			self.vertex_input_buffer_memory,
@@ -371,7 +340,7 @@ impl Layer for Triangles {
 			mem::align_of::<Vertex>() as u64,
 			self.vertex_input_buffer_memory_req.size,
 		);
-		vert_align.copy_from_slice(&vertices);
+		vert_align.copy_from_slice(&self.vertices);
 		device.unmap_memory(self.vertex_input_buffer_memory);
 		let render_pass_begin_info = vk::RenderPassBeginInfo::default()
 			.render_pass(self.renderpass)
