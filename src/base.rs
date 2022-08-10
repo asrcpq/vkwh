@@ -150,10 +150,6 @@ pub struct Base {
 	pub draw_command_buffer: vk::CommandBuffer,
 	pub setup_command_buffer: vk::CommandBuffer,
 
-	pub depth_image: vk::Image,
-	pub depth_image_view: vk::ImageView,
-	pub depth_image_memory: vk::DeviceMemory,
-
 	pub present_complete_semaphore: vk::Semaphore,
 	pub rendering_complete_semaphore: vk::Semaphore,
 
@@ -373,37 +369,6 @@ impl Base {
 			.collect();
 	
 		let device_memory_properties = instance.get_physical_device_memory_properties(pdevice);
-		let depth_image_create_info = vk::ImageCreateInfo::default()
-			.image_type(vk::ImageType::TYPE_2D)
-			.format(vk::Format::D16_UNORM)
-			.extent(surface_resolution.into())
-			.mip_levels(1)
-			.array_layers(1)
-			.samples(vk::SampleCountFlags::TYPE_1)
-			.tiling(vk::ImageTiling::OPTIMAL)
-			.usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
-			.sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-		let depth_image = device.create_image(&depth_image_create_info, None).unwrap();
-		let depth_image_memory_req = device.get_image_memory_requirements(depth_image);
-		let depth_image_memory_index = find_memorytype_index(
-			&depth_image_memory_req,
-			&device_memory_properties,
-			vk::MemoryPropertyFlags::DEVICE_LOCAL,
-		)
-		.expect("Unable to find suitable memory index for depth image.");
-
-		let depth_image_allocate_info = vk::MemoryAllocateInfo::default()
-			.allocation_size(depth_image_memory_req.size)
-			.memory_type_index(depth_image_memory_index);
-
-		let depth_image_memory = device
-			.allocate_memory(&depth_image_allocate_info, None)
-			.unwrap();
-
-		device
-			.bind_image_memory(depth_image, depth_image_memory, 0)
-			.expect("Unable to bind depth image memory");
 
 		let fence_create_info =
 			vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
@@ -414,57 +379,6 @@ impl Base {
 		let setup_commands_reuse_fence = device
 			.create_fence(&fence_create_info, None)
 			.expect("Create fence failed.");
-
-		record_submit_commandbuffer(
-			&device,
-			setup_command_buffer,
-			setup_commands_reuse_fence,
-			present_queue,
-			&[],
-			&[],
-			&[],
-			|device, setup_command_buffer| {
-				let layout_transition_barriers = vk::ImageMemoryBarrier::default()
-					.image(depth_image)
-					.dst_access_mask(
-						vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-							| vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-					)
-					.new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-					.old_layout(vk::ImageLayout::UNDEFINED)
-					.subresource_range(
-						vk::ImageSubresourceRange::default()
-							.aspect_mask(vk::ImageAspectFlags::DEPTH)
-							.layer_count(1)
-							.level_count(1),
-					);
-
-				device.cmd_pipeline_barrier(
-					setup_command_buffer,
-					vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-					vk::PipelineStageFlags::LATE_FRAGMENT_TESTS,
-					vk::DependencyFlags::empty(),
-					&[],
-					&[],
-					&[layout_transition_barriers],
-				);
-			},
-		);
-
-		let depth_image_view_info = vk::ImageViewCreateInfo::default()
-			.subresource_range(
-				vk::ImageSubresourceRange::default()
-					.aspect_mask(vk::ImageAspectFlags::DEPTH)
-					.level_count(1)
-					.layer_count(1),
-			)
-			.image(depth_image)
-			.format(depth_image_create_info.format)
-			.view_type(vk::ImageViewType::TYPE_2D);
-
-		let depth_image_view = device
-			.create_image_view(&depth_image_view_info, None)
-			.unwrap();
 
 		let semaphore_create_info = vk::SemaphoreCreateInfo::default();
 
@@ -493,8 +407,6 @@ impl Base {
 			pool,
 			draw_command_buffer,
 			setup_command_buffer,
-			depth_image,
-			depth_image_view,
 			present_complete_semaphore,
 			rendering_complete_semaphore,
 			draw_commands_reuse_fence,
@@ -502,7 +414,6 @@ impl Base {
 			surface,
 			debug_call_back,
 			debug_utils_loader,
-			depth_image_memory,
 		}
 	}
 }}
@@ -519,9 +430,6 @@ impl Drop for Base {
 				.destroy_fence(self.draw_commands_reuse_fence, None);
 			self.device
 				.destroy_fence(self.setup_commands_reuse_fence, None);
-			self.device.free_memory(self.depth_image_memory, None);
-			self.device.destroy_image_view(self.depth_image_view, None);
-			self.device.destroy_image(self.depth_image, None);
 			for &image_view in self.present_image_views.iter() {
 				self.device.destroy_image_view(image_view, None);
 			}

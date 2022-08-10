@@ -56,23 +56,11 @@ impl Triangles {
 				final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
 				..Default::default()
 			},
-			vk::AttachmentDescription {
-				format: vk::Format::D16_UNORM,
-				samples: vk::SampleCountFlags::TYPE_1,
-				load_op: vk::AttachmentLoadOp::CLEAR,
-				initial_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-				final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-				..Default::default()
-			},
 		];
 		let color_attachment_refs = [vk::AttachmentReference {
 			attachment: 0,
 			layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
 		}];
-		let depth_attachment_ref = vk::AttachmentReference {
-			attachment: 1,
-			layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-		};
 		let dependencies = [vk::SubpassDependency {
 			src_subpass: vk::SUBPASS_EXTERNAL,
 			src_stage_mask: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
@@ -84,7 +72,6 @@ impl Triangles {
 
 		let subpass = vk::SubpassDescription::default()
 			.color_attachments(&color_attachment_refs)
-			.depth_stencil_attachment(&depth_attachment_ref)
 			.pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS);
 
 		let renderpass_create_info = vk::RenderPassCreateInfo::default()
@@ -100,7 +87,7 @@ impl Triangles {
 			.present_image_views
 			.iter()
 			.map(|&present_image_view| {
-				let framebuffer_attachments = [present_image_view, base.depth_image_view];
+				let framebuffer_attachments = [present_image_view];
 				let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
 					.render_pass(renderpass)
 					.attachments(&framebuffer_attachments)

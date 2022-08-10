@@ -95,3 +95,12 @@ impl LayerCompositor {
 		}
 	}
 }
+
+impl Drop for LayerCompositor {
+	fn drop(&mut self) { unsafe {
+		let base = self.base.read().unwrap();
+		for layer in std::mem::take(&mut self.los) {
+			base.device.destroy_image(layer.image, None);
+		}
+	}}
+}
