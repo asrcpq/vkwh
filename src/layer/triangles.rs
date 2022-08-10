@@ -27,7 +27,8 @@ pub struct Triangles {
 	vertex_input_buffer_memory: vk::DeviceMemory,
 	vertex_input_buffer_memory_req: vk::MemoryRequirements,
 	fragment_shader_module: vk::ShaderModule,
-	framebuffers: Vec<vk::Framebuffer>,
+	output_image_view: vk::ImageView,
+	framebuffer: vk::Framebuffer,
 	renderpass: vk::RenderPass,
 	viewports: Vec<vk::Viewport>,
 }
@@ -78,22 +79,6 @@ impl Triangles {
 			.create_render_pass(&renderpass_create_info, None)
 			.unwrap();
 
-		let framebuffers: Vec<vk::Framebuffer> = base
-			.present_image_views
-			.iter()
-			.map(|&present_image_view| {
-				let framebuffer_attachments = [present_image_view];
-				let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
-					.render_pass(renderpass)
-					.attachments(&framebuffer_attachments)
-					.width(base.render_resolution.width)
-					.height(base.render_resolution.height)
-					.layers(1);
-
-				device.create_framebuffer(&frame_buffer_create_info, None)
-					.unwrap()
-			})
-			.collect();
 		let mut vertex_spv_file =
 			Cursor::new(&include_bytes!("../shader/triangle_vert.spv")[..]);
 		let mut frag_spv_file = Cursor::new(&include_bytes!("../shader/triangle_frag.spv")[..]);
@@ -279,7 +264,8 @@ impl Triangles {
 			vertex_input_buffer_memory,
 			vertex_input_buffer_memory_req,
 			fragment_shader_module,
-			framebuffers,
+			output_image_view: mem::zeroed(),
+			framebuffer: mem::zeroed(),
 			renderpass,
 			viewports,
 		}
@@ -299,9 +285,8 @@ impl Drop for Triangles {
 			.destroy_shader_module(self.vertex_shader_module, None);
 		device
 			.destroy_shader_module(self.fragment_shader_module, None);
-		for framebuffer in mem::take(&mut self.framebuffers) {
-			device.destroy_framebuffer(framebuffer, None);
-		}
+		device.destroy_image_view(self.output_image_view, None);
+		device.destroy_framebuffer(self.framebuffer, None);
 		device.destroy_render_pass(self.renderpass, None);
 		device.free_memory(self.vertex_input_buffer_memory, None);
 		device.destroy_buffer(self.vertex_input_buffer, None);
@@ -309,7 +294,41 @@ impl Drop for Triangles {
 }
 
 impl Layer for Triangles {
-	fn render(&self, draw_command_buffer: vk::CommandBuffer, image_idx: u32) { unsafe {
+	fn set_output(&mut self, image: vk::Image) { unsafe {
+		let base = self.base.read().unwrap();
+		let create_view_info = vk::ImageViewCreateInfo::default()
+			.view_type(vk::ImageViewType::TYPE_2D)
+			.format(base.surface_format.format)
+			.components(vk::ComponentMapping {
+				r: vk::ComponentSwizzle::R,
+				g: vk::ComponentSwizzle::G,
+				b: vk::ComponentSwizzle::B,
+				a: vk::ComponentSwizzle::A,
+			})
+			.subresource_range(vk::ImageSubresourceRange {
+				aspect_mask: vk::ImageAspectFlags::COLOR,
+				base_mip_level: 0,
+				level_count: 1,
+				base_array_layer: 0,
+				layer_count: 1,
+			})
+			.image(image);
+		let image_view = base.device.create_image_view(&create_view_info, None).unwrap();
+		let framebuffer_attachments = [image_view];
+		let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
+			.render_pass(self.renderpass)
+			.attachments(&framebuffer_attachments)
+			.width(base.render_resolution.width)
+			.height(base.render_resolution.height)
+			.layers(1);
+		let framebuffer = base.device
+			.create_framebuffer(&frame_buffer_create_info, None)
+			.unwrap();
+		self.framebuffer = framebuffer;
+		self.output_image_view = image_view;
+	}}
+
+	fn render(&self, draw_command_buffer: vk::CommandBuffer) { unsafe {
 		let clear_values = [
 			vk::ClearValue {
 				color: vk::ClearColorValue {
@@ -344,7 +363,7 @@ impl Layer for Triangles {
 		device.unmap_memory(self.vertex_input_buffer_memory);
 		let render_pass_begin_info = vk::RenderPassBeginInfo::default()
 			.render_pass(self.renderpass)
-			.framebuffer(self.framebuffers[image_idx as usize])
+			.framebuffer(self.framebuffer)
 			.render_area(base.render_resolution.into())
 			.clear_values(&clear_values);
 		device.cmd_begin_render_pass(

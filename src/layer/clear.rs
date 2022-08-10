@@ -7,6 +7,7 @@ use crate::layer::Layer;
 
 pub struct Clear {
 	base: BaseRef,
+	image: vk::Image,
 }
 
 impl Clear {
@@ -15,15 +16,21 @@ impl Clear {
 	}
 
 	pub fn new(base: BaseRef) -> Self {
-		Self { base }
+		Self {
+			base,
+			image: unsafe { std::mem::zeroed() },
+		}
 	}
 }
 
 impl Layer for Clear {
-	fn render(&self, command_buffer: vk::CommandBuffer, image_idx: u32) { unsafe {
+	fn set_output(&mut self, image: vk::Image) {
+		self.image = image;
+	}
+
+	fn render(&self, command_buffer: vk::CommandBuffer) { unsafe {
 		let base = self.base.read().unwrap();
 		let device = &base.device;
-		let image = base.present_images[image_idx as usize];
 		let subresource_range = vk::ImageSubresourceRange {
 			aspect_mask: vk::ImageAspectFlags::COLOR,
 			level_count: 1,
@@ -32,8 +39,9 @@ impl Layer for Clear {
 		};
 		let barrier = vk::ImageMemoryBarrier {
 			dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+			old_layout: vk::ImageLayout::UNDEFINED,
 			new_layout: vk::ImageLayout::GENERAL,
-			image,
+			image: self.image,
 			subresource_range,
 			..Default::default()
 		};
@@ -48,7 +56,7 @@ impl Layer for Clear {
 		);
 		device.cmd_clear_color_image(
 			command_buffer,
-			image,
+			self.image,
 			vk::ImageLayout::GENERAL,
 			&vk::ClearColorValue {
 				float32: [0.0, 0.0, 0.0, 0.0],
