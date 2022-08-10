@@ -18,6 +18,12 @@ impl LayerCompositor {
 		}
 	}
 
+	pub fn update_all(&mut self) {
+		for flag in self.update_flag.iter_mut() {
+			*flag = true;
+		}
+	}
+
 	pub fn mark_update(&mut self, idx: usize) {
 		self.update_flag[idx] = true;
 	}
@@ -47,6 +53,7 @@ impl LayerCompositor {
 						if self.update_flag[idx] {
 							let layer = layer.read().unwrap();
 							layer.render(draw_command_buffer, present_index);
+							self.update_flag[idx] = false;
 						}
 					}
 				},

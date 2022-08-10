@@ -1,4 +1,5 @@
 pub mod triangles;
+pub mod clear;
 
 use ash::vk;
 use std::sync::{Arc, RwLock};

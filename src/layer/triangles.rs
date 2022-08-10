@@ -104,8 +104,8 @@ impl Triangles {
 				let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
 					.render_pass(renderpass)
 					.attachments(&framebuffer_attachments)
-					.width(base.surface_resolution.width)
-					.height(base.surface_resolution.height)
+					.width(base.render_resolution.width)
+					.height(base.render_resolution.height)
 					.layers(1);
 
 				device.create_framebuffer(&frame_buffer_create_info, None)
@@ -217,12 +217,12 @@ impl Triangles {
 		let viewports = vec![vk::Viewport {
 			x: 0.0,
 			y: 0.0,
-			width: base.surface_resolution.width as f32,
-			height: base.surface_resolution.height as f32,
+			width: base.render_resolution.width as f32,
+			height: base.render_resolution.height as f32,
 			min_depth: 0.0,
 			max_depth: 1.0,
 		}];
-		let scissors = [base.surface_resolution.into()];
+		let scissors = [base.render_resolution.into()];
 		let viewport_state_info = vk::PipelineViewportStateCreateInfo::default()
 			.scissors(&scissors)
 			.viewports(&viewports);
@@ -390,7 +390,7 @@ impl Layer for Triangles {
 		let render_pass_begin_info = vk::RenderPassBeginInfo::default()
 			.render_pass(self.renderpass)
 			.framebuffer(self.framebuffers[image_idx as usize])
-			.render_area(base.surface_resolution.into())
+			.render_area(base.render_resolution.into())
 			.clear_values(&clear_values);
 		device.cmd_begin_render_pass(
 			draw_command_buffer,
@@ -403,7 +403,7 @@ impl Layer for Triangles {
 			self.graphics_pipelines[0],
 		);
 		device.cmd_set_viewport(draw_command_buffer, 0, &self.viewports);
-        let scissors = [base.surface_resolution.into()];
+        let scissors = [base.render_resolution.into()];
 		device.cmd_set_scissor(draw_command_buffer, 0, &scissors);
 		device.cmd_bind_vertex_buffers(
 			draw_command_buffer,

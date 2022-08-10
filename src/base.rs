@@ -10,8 +10,7 @@ use std::ffi::CStr;
 use std::ops::Drop;
 use std::os::raw::c_char;
 use std::sync::{Arc, RwLock};
-use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::window::Window;
 
 #[macro_export]
 macro_rules! offset_of {
@@ -131,7 +130,6 @@ pub struct Base {
 	pub surface_loader: Surface,
 	pub swapchain_loader: Swapchain,
 	pub debug_utils_loader: DebugUtils,
-	pub window: winit::window::Window,
 	pub debug_call_back: vk::DebugUtilsMessengerEXT,
 
 	pub pdevice: vk::PhysicalDevice,
@@ -142,6 +140,7 @@ pub struct Base {
 	pub surface: vk::SurfaceKHR,
 	pub surface_format: vk::SurfaceFormatKHR,
 	pub surface_resolution: vk::Extent2D,
+	pub render_resolution: vk::Extent2D,
 
 	pub swapchain: vk::SwapchainKHR,
 	pub present_images: Vec<vk::Image>,
@@ -163,14 +162,11 @@ pub struct Base {
 }
 
 impl Base {
-	pub fn new_ref<T>(el: &EventLoop<T>) -> BaseRef {
-		Arc::new(RwLock::new(Self::new(el)))
+	pub fn new_ref(window: &Window) -> BaseRef {
+		Arc::new(RwLock::new(Self::new(window)))
 	}
 
-	pub fn new<T>(el: &EventLoop<T>) -> Self { unsafe {
-		let window = WindowBuilder::new()
-			.build(el)
-			.unwrap();
+	pub fn new(window: &Window) -> Self { unsafe {
 		let entry = Entry::linked();
 		let app_name = CStr::from_bytes_with_nul_unchecked(b"ash");
 		let layer_names = [CStr::from_bytes_with_nul_unchecked(
@@ -180,7 +176,7 @@ impl Base {
 			.iter()
 			.map(|raw_name| raw_name.as_ptr())
 			.collect();
-		let mut extension_names = ash_window::enumerate_required_extensions(&window)
+		let mut extension_names = ash_window::enumerate_required_extensions(window)
 			.unwrap()
 			.to_vec();
 		extension_names.push(DebugUtils::name().as_ptr());
@@ -287,7 +283,14 @@ impl Base {
 			surface_capabilities.min_image_count,
 			surface_capabilities.max_image_count,
 		);
-		let surface_resolution = vk::Extent2D {
+		let surface_resolution = match surface_capabilities.current_extent.width {
+			std::u32::MAX => vk::Extent2D {
+				width: 800,
+				height: 600,
+			},
+			_ => surface_capabilities.current_extent,
+		};
+		let render_resolution = vk::Extent2D {
 			width: 800,
 			height: 600,
 		};
@@ -315,7 +318,9 @@ impl Base {
 			.image_color_space(surface_format.color_space)
 			.image_format(surface_format.format)
 			.image_extent(surface_resolution)
-			.image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+			.image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT |
+				vk::ImageUsageFlags::TRANSFER_DST
+			)
 			.image_sharing_mode(vk::SharingMode::EXCLUSIVE)
 			.pre_transform(pre_transform)
 			.composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
@@ -476,11 +481,11 @@ impl Base {
 			queue_family_index,
 			pdevice,
 			device_memory_properties,
-			window,
 			surface_loader,
 			surface_format,
 			present_queue,
 			surface_resolution,
+			render_resolution,
 			swapchain_loader,
 			swapchain,
 			present_images,
