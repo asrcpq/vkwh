@@ -195,8 +195,7 @@ impl Base {
 		let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
 			.message_severity(
 				vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
-					| vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-					| vk::DebugUtilsMessageSeverityFlagsEXT::INFO,
+					| vk::DebugUtilsMessageSeverityFlagsEXT::WARNING,
 			)
 			.message_type(
 				vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
@@ -267,18 +266,6 @@ impl Base {
 		let surface_capabilities = surface_loader
 			.get_physical_device_surface_capabilities(pdevice, surface)
 			.unwrap();
-		let mut desired_image_count = surface_capabilities.min_image_count + 1;
-		if surface_capabilities.max_image_count > 0
-			&& desired_image_count > surface_capabilities.max_image_count
-		{
-			desired_image_count = surface_capabilities.max_image_count;
-		}
-		eprintln!(
-			"image count: {} in {}/{}",
-			desired_image_count,
-			surface_capabilities.min_image_count,
-			surface_capabilities.max_image_count,
-		);
 		let surface_resolution = match surface_capabilities.current_extent.width {
 			std::u32::MAX => vk::Extent2D {
 				width: 800,
@@ -310,7 +297,7 @@ impl Base {
 		let swapchain_loader = Swapchain::new(&instance, &device);
 		let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
 			.surface(surface)
-			.min_image_count(desired_image_count)
+			.min_image_count(surface_capabilities.min_image_count)
 			.image_color_space(surface_format.color_space)
 			.image_format(surface_format.format)
 			.image_extent(surface_resolution)
@@ -343,7 +330,7 @@ impl Base {
 		let draw_command_buffer = command_buffers[1];
 
 		let present_images = swapchain_loader.get_swapchain_images(swapchain).unwrap();
-		eprintln!("actual {}", present_images.len());
+		eprintln!("surface image count: {}", present_images.len());
 		let present_image_views: Vec<vk::ImageView> = present_images
 			.iter()
 			.map(|&image| {
