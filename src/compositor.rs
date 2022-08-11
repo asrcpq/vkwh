@@ -1,13 +1,81 @@
 use ash::vk;
 
 use crate::layer::LayerRef;
-use crate::base::{BaseRef, record_submit_commandbuffer, find_memorytype_index};
+use crate::base::{Base, BaseRef, record_submit_commandbuffer, find_memorytype_index};
+
+pub struct LayerCache {
+	pub image: vk::Image,
+	pub memory: vk::DeviceMemory,
+	pub damage: bool,
+}
 
 pub struct LayerObject {
+	device: ash::Device,
 	layer: LayerRef,
-	damage: bool,
-	image: vk::Image,
-	memory: vk::DeviceMemory,
+	// no cache: render every time
+	cache: Option<LayerCache>,
+}
+
+impl LayerObject {
+	pub fn new(base: &Base, layer: LayerRef) -> Self {
+		Self {
+			device: base.device.clone(),
+			layer,
+			cache: None,
+		}
+	}
+
+	pub fn build_cache(mut self, base: &Base) -> Self {
+		let (image, memory) = unsafe {
+			let create_info = vk::ImageCreateInfo::default()
+				.image_type(vk::ImageType::TYPE_2D)
+				.format(base.surface_format.format)
+				.extent(base.render_resolution.into())
+				.mip_levels(1)
+				.array_layers(1)
+				.samples(vk::SampleCountFlags::TYPE_1)
+				.tiling(vk::ImageTiling::OPTIMAL)
+				.usage(vk::ImageUsageFlags::COLOR_ATTACHMENT |
+					vk::ImageUsageFlags::TRANSFER_DST |
+					vk::ImageUsageFlags::TRANSFER_SRC);
+			let image = base.device.create_image(&create_info, None).unwrap();
+			let memory_req = base.device.get_image_memory_requirements(image);
+			let memory_index = find_memorytype_index(
+				&memory_req,
+				&base.device_memory_properties,
+				vk::MemoryPropertyFlags::DEVICE_LOCAL,
+			).unwrap();
+			let allocate_info = vk::MemoryAllocateInfo {
+				allocation_size: memory_req.size,
+				memory_type_index: memory_index,
+				..Default::default()
+			};
+			let memory = base
+				.device
+				.allocate_memory(&allocate_info, None)
+				.unwrap();
+			base.device
+				.bind_image_memory(image, memory, 0)
+				.expect("Unable to bind depth image memory");
+			(image, memory)
+		};
+		self.layer.write().unwrap().set_output(image);
+		self.cache = Some(LayerCache {
+			image,
+			memory,
+			damage: true,
+		});
+		self
+	}
+}
+
+impl Drop for LayerObject {
+	fn drop(&mut self) { unsafe {
+		if let Some(cache) = self.cache.take() {
+			self.device.destroy_image(cache.image, None);
+			self.device.free_memory(cache.memory, None);
+		}
+	}}
 }
 
 struct BarrierBuilder {
@@ -53,6 +121,7 @@ impl BarrierBuilder {
 }
 
 pub struct LayerCompositor {
+	// TODO: prevent base lock
 	base: BaseRef,
 	los: Vec<LayerObject>,
 }
@@ -65,58 +134,28 @@ impl LayerCompositor {
 		}
 	}
 
-	pub fn push_layer(&mut self, layer: LayerRef) {
+	pub fn new_layer(&mut self, layer: LayerRef) {
 		let base = self.base.read().unwrap();
-		let (image, memory) = unsafe {
-			let create_info = vk::ImageCreateInfo::default()
-				.image_type(vk::ImageType::TYPE_2D)
-				.format(base.surface_format.format)
-				.extent(base.render_resolution.into())
-				.mip_levels(1)
-				.array_layers(1)
-				.samples(vk::SampleCountFlags::TYPE_1)
-				.tiling(vk::ImageTiling::OPTIMAL)
-				.usage(vk::ImageUsageFlags::COLOR_ATTACHMENT |
-					vk::ImageUsageFlags::TRANSFER_DST |
-					vk::ImageUsageFlags::TRANSFER_SRC);
-			let image = base.device.create_image(&create_info, None).unwrap();
-			let memory_req = base.device.get_image_memory_requirements(image);
-			let memory_index = find_memorytype_index(
-				&memory_req,
-				&base.device_memory_properties,
-				vk::MemoryPropertyFlags::DEVICE_LOCAL,
-			).unwrap();
-			let allocate_info = vk::MemoryAllocateInfo {
-				allocation_size: memory_req.size,
-				memory_type_index: memory_index,
-				..Default::default()
-			};
-			let memory = base
-				.device
-				.allocate_memory(&allocate_info, None)
-				.unwrap();
-			base.device
-				.bind_image_memory(image, memory, 0)
-				.expect("Unable to bind depth image memory");
-			(image, memory)
-		};
-		layer.write().unwrap().set_output(image);
-		self.los.push(LayerObject {
-			layer,
-			damage: false,
-			image,
-			memory,
-		})
+		self.los.push(LayerObject::new(&base, layer));
+	}
+
+	pub fn new_cached_layer(&mut self, layer: LayerRef) {
+		let base = self.base.read().unwrap();
+		self.los.push(LayerObject::new(&base, layer).build_cache(&base));
 	}
 
 	pub fn update_all(&mut self) {
 		for lo in self.los.iter_mut() {
-			lo.damage = true;
+			if let Some(mut cache) = lo.cache.as_mut() {
+				cache.damage = true;
+			}
 		}
 	}
 
 	pub fn mark_update(&mut self, idx: usize) {
-		self.los[idx].damage = true;
+		if let Some(mut cache) = self.los[idx].cache.as_mut() {
+			cache.damage = true;
+		}
 	}
 
 	pub fn render(&mut self) {
@@ -141,10 +180,12 @@ impl LayerCompositor {
 				&[base.rendering_complete_semaphore],
 				|device, command_buffer| {
 					for lo in self.los.iter_mut() {
-						if lo.damage {
-							let layer = lo.layer.read().unwrap();
-							layer.render(command_buffer);
-							lo.damage = false;
+						if let Some(cache) = lo.cache.as_mut() {
+							if cache.damage {
+								let layer = lo.layer.read().unwrap();
+								layer.render(command_buffer);
+								cache.damage = false;
+							}
 						}
 					}
 					let image = base.present_images[present_index as usize];
@@ -176,19 +217,24 @@ impl LayerCompositor {
 						..Default::default()
 					};
 					for lo in self.los.iter() {
-						bb.build(
-							lo.image,
-							vk::ImageLayout::PRESENT_SRC_KHR,
-							vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-						);
-						device.cmd_copy_image(
-							command_buffer,
-							lo.image,
-							vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-							image,
-							vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-							&[whole_region],
-						);
+						if let Some(cache) = &lo.cache {
+							bb.build(
+								cache.image,
+								vk::ImageLayout::PRESENT_SRC_KHR,
+								vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+							);
+							device.cmd_copy_image(
+								command_buffer,
+								cache.image,
+								vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+								image,
+								vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+								&[whole_region],
+							);
+						} else {
+							let layer = lo.layer.read().unwrap();
+							layer.render(command_buffer);
+						}
 					}
 					bb.build(
 						image,
@@ -210,16 +256,4 @@ impl LayerCompositor {
 				.unwrap();
 		}
 	}
-}
-
-impl Drop for LayerCompositor {
-	fn drop(&mut self) { unsafe {
-		let base = self.base.read().unwrap();
-		let device = &base.device;
-		device.device_wait_idle().unwrap();
-		for layer in std::mem::take(&mut self.los) {
-			base.device.destroy_image(layer.image, None);
-			base.device.free_memory(layer.memory, None);
-		}
-	}}
 }

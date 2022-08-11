@@ -45,7 +45,7 @@ fn main() {
 	let layer_t = Triangles::new_ref(base.clone());
 	layer_t.write().unwrap().vertices = vertices;
 	let mut vkc = Vkc::new(base.clone());
-	vkc.push_layer(layer_t.clone());
+	vkc.new_cached_layer(layer_t.clone());
 	let dx = 0.1;
 	el.run_return(|event, _, control_flow| {
 		match event {
