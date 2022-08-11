@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 winit = "0.26"
+image = "0.24"
 
 [dependencies.ash-window]
 #version = "0.11"

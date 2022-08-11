@@ -6,6 +6,7 @@ use winit::platform::run_return::EventLoopExtRunReturn;
 use vkwh::base::*;
 use vkwh::compositor::LayerCompositor as Vkc;
 use vkwh::layer::triangles::{Triangles, Vertex};
+use vkwh::layer::image_viewer::ImageViewer;
 
 enum CustomEvent {}
 
@@ -36,6 +37,10 @@ fn main() {
 			color: [1.0, 0.0, 0.0, 0.5],
 		},
 	];
+	let mut iter = std::env::args();
+	iter.next();
+	let file = iter.next().unwrap();
+	let image = image::open(file).unwrap().to_rgba8();
 	let mut el = EventLoop::<CustomEvent>::with_user_event();
 	let window = WindowBuilder::new()
 		.build(&el)
@@ -43,8 +48,10 @@ fn main() {
 	let base = Base::new_ref(&window);
 	
 	let layer_t = Triangles::new_ref(base.clone());
+	let layer_i = ImageViewer::new_ref(base.clone(), image);
 	layer_t.write().unwrap().vertices = vertices;
 	let mut vkc = Vkc::new(base.clone());
+	vkc.new_cached_layer(layer_i.clone());
 	vkc.new_cached_layer(layer_t.clone());
 	let dx = 0.1;
 	el.run_return(|event, _, control_flow| {

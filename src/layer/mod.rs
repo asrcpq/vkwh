@@ -1,4 +1,5 @@
 pub mod triangles;
+pub mod image_viewer;
 pub mod clear;
 
 use ash::vk;

@@ -71,6 +71,7 @@ impl LayerObject {
 
 impl Drop for LayerObject {
 	fn drop(&mut self) { unsafe {
+		self.device.device_wait_idle().unwrap();
 		if let Some(cache) = self.cache.take() {
 			self.device.destroy_image(cache.image, None);
 			self.device.free_memory(cache.memory, None);
