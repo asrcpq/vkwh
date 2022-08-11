@@ -27,8 +27,8 @@ pub struct Triangles {
 	vertex_input_buffer_memory: vk::DeviceMemory,
 	vertex_input_buffer_memory_req: vk::MemoryRequirements,
 	fragment_shader_module: vk::ShaderModule,
-	output_image_view: vk::ImageView,
-	framebuffer: vk::Framebuffer,
+	output_image_views: Vec<vk::ImageView>,
+	framebuffers: Vec<vk::Framebuffer>,
 	renderpass: vk::RenderPass,
 	viewports: Vec<vk::Viewport>,
 }
@@ -246,8 +246,8 @@ impl Triangles {
 			vertex_input_buffer_memory,
 			vertex_input_buffer_memory_req,
 			fragment_shader_module,
-			output_image_view: mem::zeroed(),
-			framebuffer: mem::zeroed(),
+			output_image_views: Vec::new(),
+			framebuffers: Vec::new(),
 			renderpass,
 			viewports,
 		}
@@ -267,8 +267,12 @@ impl Drop for Triangles {
 			.destroy_shader_module(self.vertex_shader_module, None);
 		device
 			.destroy_shader_module(self.fragment_shader_module, None);
-		device.destroy_image_view(self.output_image_view, None);
-		device.destroy_framebuffer(self.framebuffer, None);
+		for &image_view in self.output_image_views.iter() {
+			device.destroy_image_view(image_view, None);
+		}
+		for &framebuffer in self.framebuffers.iter() {
+			device.destroy_framebuffer(framebuffer, None);
+		}
 		device.destroy_render_pass(self.renderpass, None);
 		device.free_memory(self.vertex_input_buffer_memory, None);
 		device.destroy_buffer(self.vertex_input_buffer, None);
@@ -276,41 +280,45 @@ impl Drop for Triangles {
 }
 
 impl Layer for Triangles {
-	fn set_output(&mut self, image: vk::Image) { unsafe {
+	fn set_output(&mut self, image: Vec<vk::Image>) { unsafe {
 		let base = self.base.read().unwrap();
-		let create_view_info = vk::ImageViewCreateInfo::default()
-			.view_type(vk::ImageViewType::TYPE_2D)
-			.format(base.surface_format.format)
-			.components(vk::ComponentMapping {
-				r: vk::ComponentSwizzle::R,
-				g: vk::ComponentSwizzle::G,
-				b: vk::ComponentSwizzle::B,
-				a: vk::ComponentSwizzle::A,
-			})
-			.subresource_range(vk::ImageSubresourceRange {
-				aspect_mask: vk::ImageAspectFlags::COLOR,
-				base_mip_level: 0,
-				level_count: 1,
-				base_array_layer: 0,
-				layer_count: 1,
-			})
-			.image(image);
-		let image_view = base.device.create_image_view(&create_view_info, None).unwrap();
-		let framebuffer_attachments = [image_view];
-		let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
-			.render_pass(self.renderpass)
-			.attachments(&framebuffer_attachments)
-			.width(base.render_resolution.width)
-			.height(base.render_resolution.height)
-			.layers(1);
-		let framebuffer = base.device
-			.create_framebuffer(&frame_buffer_create_info, None)
-			.unwrap();
-		self.framebuffer = framebuffer;
-		self.output_image_view = image_view;
+		let (framebuffers, image_views) = image.into_iter()
+			.map(|image| {
+				let create_view_info = vk::ImageViewCreateInfo::default()
+					.view_type(vk::ImageViewType::TYPE_2D)
+					.format(base.surface_format.format)
+					.components(vk::ComponentMapping {
+						r: vk::ComponentSwizzle::R,
+						g: vk::ComponentSwizzle::G,
+						b: vk::ComponentSwizzle::B,
+						a: vk::ComponentSwizzle::A,
+					})
+					.subresource_range(vk::ImageSubresourceRange {
+						aspect_mask: vk::ImageAspectFlags::COLOR,
+						base_mip_level: 0,
+						level_count: 1,
+						base_array_layer: 0,
+						layer_count: 1,
+					})
+					.image(image);
+				let image_view = base.device.create_image_view(&create_view_info, None).unwrap();
+				let framebuffer_attachments = [image_view];
+				let frame_buffer_create_info = vk::FramebufferCreateInfo::default()
+					.render_pass(self.renderpass)
+					.attachments(&framebuffer_attachments)
+					.width(base.render_resolution.width)
+					.height(base.render_resolution.height)
+					.layers(1);
+				let framebuffer = base.device
+					.create_framebuffer(&frame_buffer_create_info, None)
+					.unwrap();
+				(framebuffer, image_view)
+			}).unzip();
+		self.framebuffers = framebuffers;
+		self.output_image_views = image_views;
 	}}
 
-	fn render(&self, draw_command_buffer: vk::CommandBuffer) { unsafe {
+	fn render(&self, draw_command_buffer: vk::CommandBuffer, idx: usize) { unsafe {
 		let base = self.base.read().unwrap();
 		let device = &base.device;
 
@@ -339,7 +347,7 @@ impl Layer for Triangles {
 		device.unmap_memory(self.vertex_input_buffer_memory);
 		let render_pass_begin_info = vk::RenderPassBeginInfo::default()
 			.render_pass(self.renderpass)
-			.framebuffer(self.framebuffer)
+			.framebuffer(self.framebuffers[idx])
 			.render_area(base.render_resolution.into())
 			.clear_values(&clear_values);
 		device.cmd_begin_render_pass(

@@ -25,6 +25,11 @@ impl LayerObject {
 		}
 	}
 
+	pub fn build_instant(self, base: &Base) -> Self {
+		self.layer.write().unwrap().set_output(base.present_images.clone());
+		self
+	}
+
 	pub fn build_cache(mut self, base: &Base) -> Self {
 		let (image, memory) = unsafe {
 			let create_info = vk::ImageCreateInfo::default()
@@ -59,7 +64,7 @@ impl LayerObject {
 				.expect("Unable to bind depth image memory");
 			(image, memory)
 		};
-		self.layer.write().unwrap().set_output(image);
+		self.layer.write().unwrap().set_output(vec![image]);
 		self.cache = Some(LayerCache {
 			image,
 			memory,
@@ -137,7 +142,7 @@ impl LayerCompositor {
 
 	pub fn new_layer(&mut self, layer: LayerRef) {
 		let base = self.base.read().unwrap();
-		self.los.push(LayerObject::new(&base, layer));
+		self.los.push(LayerObject::new(&base, layer).build_instant(&base));
 	}
 
 	pub fn new_cached_layer(&mut self, layer: LayerRef) {
@@ -184,7 +189,7 @@ impl LayerCompositor {
 						if let Some(cache) = lo.cache.as_mut() {
 							if cache.damage {
 								let layer = lo.layer.read().unwrap();
-								layer.render(command_buffer);
+								layer.render(command_buffer, 0);
 								cache.damage = false;
 							}
 						}
@@ -204,6 +209,11 @@ impl LayerCompositor {
 							float32: [0.0, 0.0, 0.0, 0.0],
 						},
 						&[bb.subresource_range],
+					);
+					bb.build(
+						image,
+						vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+						vk::ImageLayout::PRESENT_SRC_KHR,
 					);
 					let subresource = vk::ImageSubresourceLayers {
 						aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -234,14 +244,9 @@ impl LayerCompositor {
 							);
 						} else {
 							let layer = lo.layer.read().unwrap();
-							layer.render(command_buffer);
+							layer.render(command_buffer, present_index as usize);
 						}
 					}
-					bb.build(
-						image,
-						vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-						vk::ImageLayout::PRESENT_SRC_KHR,
-					);
 				},
 			);
 			let wait_semaphors = [base.rendering_complete_semaphore];

@@ -51,8 +51,8 @@ fn main() {
 	let layer_i = ImageViewer::new_ref(base.clone(), image);
 	layer_t.write().unwrap().vertices = vertices;
 	let mut vkc = Vkc::new(base.clone());
-	vkc.new_cached_layer(layer_i.clone());
 	vkc.new_cached_layer(layer_t.clone());
+	vkc.new_layer(layer_i.clone());
 	let dx = 0.1;
 	el.run_return(|event, _, control_flow| {
 		match event {
