@@ -10,6 +10,48 @@ pub struct LayerObject {
 	memory: vk::DeviceMemory,
 }
 
+struct BarrierBuilder {
+	pub subresource_range: vk::ImageSubresourceRange,
+	pub device: ash::Device,
+	pub command: vk::CommandBuffer,
+}
+
+impl BarrierBuilder {
+	pub fn new(device: ash::Device, command: vk::CommandBuffer) -> Self {
+		let subresource_range = vk::ImageSubresourceRange {
+			aspect_mask: vk::ImageAspectFlags::COLOR,
+			level_count: 1,
+			layer_count: 1,
+			..Default::default()
+		};
+		Self {
+			subresource_range,
+			device,
+			command,
+		}
+	}
+
+	pub fn build(&self, image: vk::Image, from: vk::ImageLayout, to: vk::ImageLayout) { unsafe {
+		let barrier = vk::ImageMemoryBarrier {
+			dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+			old_layout: from,
+			new_layout: to,
+			image,
+			subresource_range: self.subresource_range,
+			..Default::default()
+		};
+		self.device.cmd_pipeline_barrier(
+			self.command,
+			vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+			vk::PipelineStageFlags::TRANSFER,
+			vk::DependencyFlags::empty(),
+			&[],
+			&[],
+			&[barrier],
+		);
+	}}
+}
+
 pub struct LayerCompositor {
 	base: BaseRef,
 	los: Vec<LayerObject>,
@@ -105,29 +147,12 @@ impl LayerCompositor {
 							lo.damage = false;
 						}
 					}
-					let subresource_range = vk::ImageSubresourceRange {
-						aspect_mask: vk::ImageAspectFlags::COLOR,
-						level_count: 1,
-						layer_count: 1,
-						..Default::default()
-					};
 					let image = base.present_images[present_index as usize];
-					let barrier = vk::ImageMemoryBarrier {
-						dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-						old_layout: vk::ImageLayout::UNDEFINED,
-						new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+					let bb = BarrierBuilder::new(device.clone(), command_buffer);
+					bb.build(
 						image,
-						subresource_range,
-						..Default::default()
-					};
-					device.cmd_pipeline_barrier(
-						command_buffer,
-						vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-						vk::PipelineStageFlags::TRANSFER,
-						vk::DependencyFlags::empty(),
-						&[],
-						&[],
-						&[barrier],
+						vk::ImageLayout::UNDEFINED,
+						vk::ImageLayout::TRANSFER_DST_OPTIMAL,
 					);
 					device.cmd_clear_color_image(
 						command_buffer,
@@ -136,7 +161,7 @@ impl LayerCompositor {
 						&vk::ClearColorValue {
 							float32: [0.0, 0.0, 0.0, 0.0],
 						},
-						&[subresource_range],
+						&[bb.subresource_range],
 					);
 					let subresource = vk::ImageSubresourceLayers {
 						aspect_mask: vk::ImageAspectFlags::COLOR,
@@ -151,22 +176,10 @@ impl LayerCompositor {
 						..Default::default()
 					};
 					for lo in self.los.iter() {
-						let barrier = vk::ImageMemoryBarrier {
-							dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
-							old_layout: vk::ImageLayout::PRESENT_SRC_KHR,
-							new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-							image: lo.image,
-							subresource_range,
-							..Default::default()
-						};
-						device.cmd_pipeline_barrier(
-							command_buffer,
-							vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-							vk::PipelineStageFlags::TRANSFER,
-							vk::DependencyFlags::empty(),
-							&[],
-							&[],
-							&[barrier],
+						bb.build(
+							lo.image,
+							vk::ImageLayout::PRESENT_SRC_KHR,
+							vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
 						);
 						device.cmd_copy_image(
 							command_buffer,
@@ -177,26 +190,10 @@ impl LayerCompositor {
 							&[whole_region],
 						);
 					}
-					let barrier_end = vk::ImageMemoryBarrier {
-						old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-						new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+					bb.build(
 						image,
-						subresource_range: vk::ImageSubresourceRange {
-							aspect_mask: vk::ImageAspectFlags::COLOR,
-							level_count: 1,
-							layer_count: 1,
-							..Default::default()
-						},
-						..Default::default()
-					};
-					device.cmd_pipeline_barrier(
-						command_buffer,
-						vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-						vk::PipelineStageFlags::TRANSFER,
-						vk::DependencyFlags::empty(),
-						&[],
-						&[],
-						&[barrier_end],
+						vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+						vk::ImageLayout::PRESENT_SRC_KHR,
 					);
 				},
 			);
