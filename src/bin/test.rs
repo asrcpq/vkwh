@@ -4,7 +4,6 @@ use winit::window::WindowBuilder;
 use winit::platform::run_return::EventLoopExtRunReturn;
 
 use vkwh::base::*;
-use vkwh::layer;
 use vkwh::compositor::LayerCompositor as Vkc;
 use vkwh::layer::triangles::{Triangles, Vertex};
 
@@ -43,12 +42,10 @@ fn main() {
 		.unwrap();
 	let base = Base::new_ref(&window);
 	
-	let layer_c = layer::clear::Clear::new_ref(base.clone());
 	let layer_t = Triangles::new_ref(base.clone());
 	layer_t.write().unwrap().vertices = vertices;
 	let mut vkc = Vkc::new(base.clone());
-	vkc.push_layer(layer_c.clone());
-	//vkc.push_layer(layer_t.clone());
+	vkc.push_layer(layer_t.clone());
 	let dx = 0.1;
 	el.run_return(|event, _, control_flow| {
 		match event {

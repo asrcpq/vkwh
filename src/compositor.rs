@@ -35,7 +35,8 @@ impl LayerCompositor {
 				.samples(vk::SampleCountFlags::TYPE_1)
 				.tiling(vk::ImageTiling::OPTIMAL)
 				.usage(vk::ImageUsageFlags::COLOR_ATTACHMENT |
-					vk::ImageUsageFlags::TRANSFER_DST);
+					vk::ImageUsageFlags::TRANSFER_DST |
+					vk::ImageUsageFlags::TRANSFER_SRC);
 			let image = base.device.create_image(&create_info, None).unwrap();
 			let memory_req = base.device.get_image_memory_requirements(image);
 			let memory_index = find_memorytype_index(
@@ -114,7 +115,7 @@ impl LayerCompositor {
 					let barrier = vk::ImageMemoryBarrier {
 						dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
 						old_layout: vk::ImageLayout::UNDEFINED,
-						new_layout: vk::ImageLayout::GENERAL,
+						new_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
 						image,
 						subresource_range,
 						..Default::default()
@@ -128,9 +129,56 @@ impl LayerCompositor {
 						&[],
 						&[barrier],
 					);
-					// impl blending here
+					device.cmd_clear_color_image(
+						command_buffer,
+						image,
+						vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+						&vk::ClearColorValue {
+							float32: [0.0, 0.0, 0.0, 0.0],
+						},
+						&[subresource_range],
+					);
+					let subresource = vk::ImageSubresourceLayers {
+						aspect_mask: vk::ImageAspectFlags::COLOR,
+						mip_level: 0,
+						base_array_layer: 0,
+						layer_count: 1,
+					};
+					let whole_region = vk::ImageCopy {
+						src_subresource: subresource,
+						dst_subresource: subresource,
+						extent: base.render_resolution.into(),
+						..Default::default()
+					};
+					for lo in self.los.iter() {
+						let barrier = vk::ImageMemoryBarrier {
+							dst_access_mask: vk::AccessFlags::TRANSFER_WRITE,
+							old_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+							new_layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+							image: lo.image,
+							subresource_range,
+							..Default::default()
+						};
+						device.cmd_pipeline_barrier(
+							command_buffer,
+							vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+							vk::PipelineStageFlags::TRANSFER,
+							vk::DependencyFlags::empty(),
+							&[],
+							&[],
+							&[barrier],
+						);
+						device.cmd_copy_image(
+							command_buffer,
+							lo.image,
+							vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+							image,
+							vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+							&[whole_region],
+						);
+					}
 					let barrier_end = vk::ImageMemoryBarrier {
-						old_layout: vk::ImageLayout::GENERAL,
+						old_layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
 						new_layout: vk::ImageLayout::PRESENT_SRC_KHR,
 						image,
 						subresource_range: vk::ImageSubresourceRange {
