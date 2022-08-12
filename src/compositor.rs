@@ -227,8 +227,17 @@ impl LayerCompositor {
 						extent: base.render_resolution.into(),
 						..Default::default()
 					};
+					let mut prev_copy = false;
 					for lo in self.los.iter() {
 						if let Some(cache) = &lo.cache {
+							if !prev_copy {
+								bb.build(
+									image,
+									vk::ImageLayout::PRESENT_SRC_KHR,
+									vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+								);
+							}
+							prev_copy = true;
 							bb.build(
 								cache.image,
 								vk::ImageLayout::PRESENT_SRC_KHR,
@@ -243,9 +252,24 @@ impl LayerCompositor {
 								&[whole_region],
 							);
 						} else {
+							if prev_copy {
+								bb.build(
+									image,
+									vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+									vk::ImageLayout::PRESENT_SRC_KHR,
+								);
+							}
+							prev_copy = false;
 							let layer = lo.layer.read().unwrap();
 							layer.render(command_buffer, present_index as usize);
 						}
+					}
+					if prev_copy {
+						bb.build(
+							image,
+							vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+							vk::ImageLayout::PRESENT_SRC_KHR,
+						);
 					}
 				},
 			);

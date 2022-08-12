@@ -11,8 +11,8 @@ size_y = 1024 // h
 fsize = 10
 while True:
 	font = ImageFont.truetype(sys.argv[1], fsize)
-	size = font.getsize("M")
-	if size[0] >= w or size[1] >= h:
+	size = font.getbbox("M")
+	if size[2] >= w or size[3] >= h:
 		fsize -= 1
 		break
 	fsize += 1

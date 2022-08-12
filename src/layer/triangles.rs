@@ -80,8 +80,9 @@ impl Triangles {
 			.unwrap();
 
 		let mut vertex_spv_file =
-			Cursor::new(&include_bytes!("../shader/triangle_vert.spv")[..]);
-		let mut frag_spv_file = Cursor::new(&include_bytes!("../shader/triangle_frag.spv")[..]);
+			Cursor::new(&include_bytes!("../../assets/spvs/triangle_vert.spv")[..]);
+		let mut frag_spv_file =
+			Cursor::new(&include_bytes!("../../assets/spvs/triangle_frag.spv")[..]);
 
 		let vertex_code =
 			read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");

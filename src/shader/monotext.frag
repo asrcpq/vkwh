@@ -4,10 +4,11 @@
 
 layout (binding = 0) uniform sampler2D samplerColor;
 
-layout (location = 0) in vec2 o_uv;
+layout (location = 0) in vec4 o_color;
+layout (location = 1) in vec2 o_uv;
 layout (location = 0) out vec4 uFragColor;
 
 void main() {
-	vec4 color = texture(samplerColor, o_uv);
+	vec4 color = vec4(o_color.xyz, texture(samplerColor, o_uv).r);
 	uFragColor = color;
 }

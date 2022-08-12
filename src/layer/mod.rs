@@ -1,6 +1,7 @@
 pub mod triangles;
 pub mod image_viewer;
 pub mod clear;
+pub mod monotext;
 
 use ash::vk;
 use std::sync::{Arc, RwLock};

@@ -10,15 +10,19 @@ use crate::offset_of;
 use crate::layer::Layer;
 use crate::base::{BaseRef, record_submit_commandbuffer, find_memorytype_index};
 
+pub mod label_stack;
+use label_stack::LabelStack;
+
 #[derive(Clone, Debug, Copy)]
-struct Vertex {
-	pos: [f32; 4],
+pub struct Vertex {
+	color: [f32; 4],
+	pos: [f32; 2],
 	uv: [f32; 2],
 }
 
-pub struct ImageViewer {
+pub struct Monotext {
 	base: BaseRef,
-	vertices: Vec<Vertex>,
+	pub label_stack: LabelStack,
 
 	image_buffer: vk::Buffer,
 	image_buffer_memory: vk::DeviceMemory,
@@ -44,12 +48,12 @@ pub struct ImageViewer {
 	viewports: Vec<vk::Viewport>,
 }
 
-impl ImageViewer {
-	pub fn new_ref(base: BaseRef, image: image::RgbaImage) -> Arc<RwLock<Self>> {
+impl Monotext {
+	pub fn new_ref(base: BaseRef, image: image::GrayImage) -> Arc<RwLock<Self>> {
 		Arc::new(RwLock::new(Self::new(base, image)))
 	}
 
-	pub fn new(base: BaseRef, image: image::RgbaImage) -> Self { unsafe {
+	pub fn new(base: BaseRef, image: image::GrayImage) -> Self { unsafe {
 		let base_clone = base.clone();
 		let base = base.read().unwrap();
 		let device = &base.device;
@@ -92,9 +96,9 @@ impl ImageViewer {
 			.unwrap();
 
 		let mut vertex_spv_file =
-			Cursor::new(&include_bytes!("../../assets/spvs/texture_vert.spv")[..]);
+			Cursor::new(&include_bytes!("../../../assets/spvs/monotext_vert.spv")[..]);
 		let mut frag_spv_file =
-			Cursor::new(&include_bytes!("../../assets/spvs/texture_frag.spv")[..]);
+			Cursor::new(&include_bytes!("../../../assets/spvs/monotext_frag.spv")[..]);
 
 		let vertex_code =
 			read_spv(&mut vertex_spv_file).expect("Failed to read vertex shader spv file");
@@ -136,10 +140,16 @@ impl ImageViewer {
 				location: 0,
 				binding: 0,
 				format: vk::Format::R32G32B32A32_SFLOAT,
-				offset: offset_of!(Vertex, pos) as u32,
+				offset: offset_of!(Vertex, color) as u32,
 			},
 			vk::VertexInputAttributeDescription {
 				location: 1,
+				binding: 0,
+				format: vk::Format::R32G32B32A32_SFLOAT,
+				offset: offset_of!(Vertex, pos) as u32,
+			},
+			vk::VertexInputAttributeDescription {
+				location: 2,
 				binding: 0,
 				format: vk::Format::R32G32B32A32_SFLOAT,
 				offset: offset_of!(Vertex, uv) as u32,
@@ -154,38 +164,12 @@ impl ImageViewer {
 			..Default::default()
 		};
 		let vertex_input_buffer_info = vk::BufferCreateInfo {
-			size: 100 * mem::size_of::<Vertex>() as u64,
+			size: 6000 * mem::size_of::<Vertex>() as u64,
 			usage: vk::BufferUsageFlags::VERTEX_BUFFER,
 			sharing_mode: vk::SharingMode::EXCLUSIVE,
 			..Default::default()
 		};
 
-		let vertices = vec![
-			Vertex {
-				pos: [0.0, 0.0, 0.0, 1.0],
-				uv: [0.0, 0.0],
-			},
-			Vertex {
-				pos: [0.0, 1.0, 0.0, 1.0],
-				uv: [0.0, 1.0],
-			},
-			Vertex {
-				pos: [1.0, 0.0, 0.0, 1.0],
-				uv: [1.0, 0.0],
-			},
-			Vertex {
-				pos: [0.0, 1.0, 0.0, 1.0],
-				uv: [0.0, 1.0],
-			},
-			Vertex {
-				pos: [1.0, 0.0, 0.0, 1.0],
-				uv: [1.0, 0.0],
-			},
-			Vertex {
-				pos: [1.0, 1.0, 0.0, 1.0],
-				uv: [1.0, 1.0],
-			},
-		];
 		let vertex_input_buffer = device
 			.create_buffer(&vertex_input_buffer_info, None)
 			.unwrap();
@@ -274,7 +258,7 @@ impl ImageViewer {
 
 		let texture_create_info = vk::ImageCreateInfo {
 			image_type: vk::ImageType::TYPE_2D,
-			format: vk::Format::R8G8B8A8_UNORM,
+			format: vk::Format::R8_UNORM,
 			extent: image_extent.into(),
 			mip_levels: 1,
 			array_layers: 1,
@@ -482,17 +466,16 @@ impl ImageViewer {
 			..Default::default()
 		};
 		let color_blend_attachment_states = [vk::PipelineColorBlendAttachmentState {
-			blend_enable: 0,
-			src_color_blend_factor: vk::BlendFactor::SRC_COLOR,
-			dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_DST_COLOR,
+			blend_enable: 1,
+			src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
+			dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
 			color_blend_op: vk::BlendOp::ADD,
-			src_alpha_blend_factor: vk::BlendFactor::ZERO,
+			src_alpha_blend_factor: vk::BlendFactor::ONE,
 			dst_alpha_blend_factor: vk::BlendFactor::ZERO,
 			alpha_blend_op: vk::BlendOp::ADD,
 			color_write_mask: vk::ColorComponentFlags::RGBA,
 		}];
 		let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
-			.logic_op(vk::LogicOp::CLEAR)
 			.attachments(&color_blend_attachment_states);
 
 		let dynamic_state = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
@@ -523,7 +506,7 @@ impl ImageViewer {
 
 		Self {
 			base: base_clone,
-			vertices,
+			label_stack: LabelStack::new([16, 32]),
 			graphics_pipelines,
 			pipeline_layout,
 
@@ -550,7 +533,7 @@ impl ImageViewer {
 	}}
 }
 
-impl Drop for ImageViewer {
+impl Drop for Monotext {
 	fn drop(&mut self) { unsafe {
 		let base = self.base.read().unwrap();
 		let device = &base.device;
@@ -587,7 +570,7 @@ impl Drop for ImageViewer {
 	}}
 }
 
-impl Layer for ImageViewer {
+impl Layer for Monotext {
 	fn set_output(&mut self, image: Vec<vk::Image>) { unsafe {
 		let base = self.base.read().unwrap();
 		let (framebuffers, image_views) = image.into_iter()
@@ -650,7 +633,8 @@ impl Layer for ImageViewer {
 			mem::align_of::<Vertex>() as u64,
 			self.vertex_input_buffer_memory_req.size,
 		);
-		vert_align.copy_from_slice(&self.vertices);
+		let vertices = self.label_stack.to_vertices(&self.viewports[0]);
+		vert_align.copy_from_slice(&vertices);
 		device.unmap_memory(self.vertex_input_buffer_memory);
 
 		let render_pass_begin_info = vk::RenderPassBeginInfo::default()
@@ -686,7 +670,7 @@ impl Layer for ImageViewer {
 			&[self.vertex_input_buffer],
 			&[0],
 		);
-		device.cmd_draw(draw_command_buffer, 6, 1, 0, 0);
+		device.cmd_draw(draw_command_buffer, vertices.len() as u32, 1, 0, 0);
 		device.cmd_end_render_pass(draw_command_buffer);
 	}}
 }

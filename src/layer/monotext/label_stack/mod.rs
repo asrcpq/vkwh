@@ -2,9 +2,8 @@ pub mod line;
 use line::{Char, Line};
 
 use std::collections::HashMap;
-use vulkano::pipeline::graphics::viewport::Viewport;
+use ash::vk;
 
-#[derive(Default)]
 pub struct LabelStack {
 	lines: Vec<Line>,
 	names: HashMap<String, usize>,
@@ -12,7 +11,7 @@ pub struct LabelStack {
 	font_size: [u32; 2],
 }
 
-use crate::vertex::VertexText;
+use super::Vertex;
 
 impl LabelStack {
 	pub fn new(font_size: [u32; 2]) -> Self {
@@ -28,6 +27,12 @@ impl LabelStack {
 		self.scaler = k;
 	}
 
+	pub fn remove_text(&mut self, key: &str) {
+		if let Some(idx) = self.names.remove(key) {
+			self.lines.remove(idx);
+		}
+	}
+
 	pub fn add_text(&mut self, key: &str, line: Line) {
 		if let Some(idx) = self.names.get(key) {
 			self.lines[*idx] = line;
@@ -40,7 +45,7 @@ impl LabelStack {
 		self.lines.push(line);
 	}
 
-	pub fn to_vertices(&self, viewport: &Viewport) -> Vec<VertexText> {
+	pub fn to_vertices(&self, viewport: &vk::Viewport) -> Vec<Vertex> {
 		let size_x = 1024 / self.font_size[0];
 		// let size_y = 1024 / self.font_size[1];
 		let mut result = vec![];
@@ -69,14 +74,14 @@ impl LabelStack {
 					];
 					let pos = [
 						-1.0 + ((idx + upos[0]) * self.font_size[0]) as f32
-							/ viewport.dimensions[0] * self.scaler,
+							/ viewport.width * self.scaler,
 						-1.0 + ((idy + upos[1]) * self.font_size[1]) as f32
-							/ viewport.dimensions[1] * self.scaler,
+							/ viewport.height * self.scaler,
 					];
-					result.push(VertexText {
+					result.push(Vertex {
 						color,
 						pos,
-						tex_coord,
+						uv: tex_coord,
 					});
 				}
 			}
