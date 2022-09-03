@@ -58,6 +58,7 @@ fn main() {
 	let txt = "hello, world".to_string();
 	{
 		let mut layer_m = layer_m.write().unwrap();
+		layer_m.label_stack.scaler = 2.0;
 		layer_m.label_stack.add_text("1", Line::new_colored(
 			txt.bytes().collect(),
 			[1.0, 0.0, 1.0, 0.0],
